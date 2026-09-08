@@ -1,0 +1,148 @@
+// ══════════════════════════════════════════════════════════════
+//  GABARITO — PedidosController.cs (uso exclusivo do professor)
+// ══════════════════════════════════════════════════════════════
+//
+// Este é o código COMPLETO com todos os TODOs resolvidos.
+// NÃO distribua para os alunos antes da atividade.
+
+using System.Text;
+using System.Text.Json;
+using LojaDev.Compartilhado.Fila;
+using LojaDev.Compartilhado.Modelos;
+using Microsoft.AspNetCore.Mvc;
+
+namespace LojaDev.LojaApi.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class PedidosController : ControllerBase
+{
+    private readonly IHttpClientFactory _httpFactory;
+    private readonly IConfiguration _config;
+    private readonly FilaDePedidos _fila;
+
+    public PedidosController(
+        IHttpClientFactory httpFactory,
+        IConfiguration config,
+        FilaDePedidos fila)
+    {
+        _httpFactory = httpFactory;
+        _config = config;
+        _fila = fila;
+    }
+
+    // ── FLUXO 1: TOTALMENTE SÍNCRONO ──────────────────────────
+
+    [HttpPost("sincrono")]
+    public async Task<IActionResult> CriarPedidoSincrono([FromBody] Pedido pedido)
+    {
+        var inicioTotal = DateTime.Now;
+        Console.WriteLine($"\n🛒 ═══ FLUXO SÍNCRONO — Pedido {pedido.Id} ═══");
+
+        // ── TODO 1 (RESOLVIDO): Chamar PagamentoApi ──────────
+        var urlPagamento = _config["ServicoPagamento"];
+        var client = _httpFactory.CreateClient();
+        var json = JsonSerializer.Serialize(pedido);
+        var conteudo = new StringContent(json, Encoding.UTF8, "application/json");
+        var resposta = await client.PostAsync($"{urlPagamento}/api/pagamentos", conteudo);
+        var corpo = await resposta.Content.ReadAsStringAsync();
+        var resultado = JsonSerializer.Deserialize<JsonElement>(corpo);
+        bool aprovado = resultado.GetProperty("aprovado").GetBoolean();
+
+        if (!aprovado)
+        {
+            var tempoRejeicao = (DateTime.Now - inicioTotal).TotalMilliseconds;
+            Console.WriteLine($"🛒 Pedido REJEITADO em {tempoRejeicao:F0}ms");
+            return BadRequest(new
+            {
+                pedidoId = pedido.Id,
+                status = "rejeitado",
+                mensagem = "Pagamento não aprovado",
+                tempoTotalMs = tempoRejeicao
+            });
+        }
+
+        // ── TODO 2 (RESOLVIDO): Chamar NotificacaoApi ────────
+        var urlNotificacao = _config["ServicoNotificacao"];
+        var bodyNotificacao = new
+        {
+            Destinatario = pedido.Cliente,
+            Assunto = $"Pedido {pedido.Id} confirmado!",
+            Corpo = $"Seu pedido de {pedido.Produto} (R$ {pedido.Valor}) foi aprovado."
+        };
+        var jsonNotif = JsonSerializer.Serialize(bodyNotificacao);
+        var conteudoNotif = new StringContent(jsonNotif, Encoding.UTF8, "application/json");
+        var respostaNotif = await client.PostAsync($"{urlNotificacao}/api/notificacoes", conteudoNotif);
+        string statusNotificacao = respostaNotif.IsSuccessStatusCode ? "enviada" : "falhou";
+
+        var tempoTotal = (DateTime.Now - inicioTotal).TotalMilliseconds;
+        Console.WriteLine($"🛒 ═══ SÍNCRONO concluído em {tempoTotal:F0}ms ═══\n");
+
+        return Ok(new
+        {
+            pedidoId = pedido.Id,
+            status = "aprovado",
+            notificacao = statusNotificacao,
+            fluxo = "sincrono",
+            tempoTotalMs = tempoTotal,
+            observacao = "⏱️ Note o tempo total — inclui a espera da notificação!"
+        });
+    }
+
+    // ── FLUXO 2: PAGAMENTO SÍNCRONO + NOTIFICAÇÃO ASSÍNCRONA ──
+
+    [HttpPost("assincrono")]
+    public async Task<IActionResult> CriarPedidoAssincrono([FromBody] Pedido pedido)
+    {
+        var inicioTotal = DateTime.Now;
+        Console.WriteLine($"\n🛒 ═══ FLUXO ASSÍNCRONO — Pedido {pedido.Id} ═══");
+
+        // ── TODO 3 (RESOLVIDO): Chamar PagamentoApi (igual ao TODO 1) ──
+        var urlPagamento = _config["ServicoPagamento"];
+        var client = _httpFactory.CreateClient();
+        var json = JsonSerializer.Serialize(pedido);
+        var conteudo = new StringContent(json, Encoding.UTF8, "application/json");
+        var resposta = await client.PostAsync($"{urlPagamento}/api/pagamentos", conteudo);
+        var corpo = await resposta.Content.ReadAsStringAsync();
+        var resultado = JsonSerializer.Deserialize<JsonElement>(corpo);
+        bool aprovado = resultado.GetProperty("aprovado").GetBoolean();
+
+        if (!aprovado)
+        {
+            var tempoRejeicao = (DateTime.Now - inicioTotal).TotalMilliseconds;
+            Console.WriteLine($"🛒 Pedido REJEITADO em {tempoRejeicao:F0}ms");
+            return BadRequest(new
+            {
+                pedidoId = pedido.Id,
+                status = "rejeitado",
+                mensagem = "Pagamento não aprovado",
+                tempoTotalMs = tempoRejeicao
+            });
+        }
+
+        // ── TODO 4 (RESOLVIDO): Publicar evento na fila ─────
+        var evento = new EventoPedidoAprovado
+        {
+            PedidoId = pedido.Id,
+            Cliente = pedido.Cliente,
+            Produto = pedido.Produto,
+            Valor = pedido.Valor
+        };
+        await _fila.PublicarAsync(evento);
+
+        // ── TODO 5 (RESOLVIDO): Retornar Accepted (202) ─────
+        var tempoTotal = (DateTime.Now - inicioTotal).TotalMilliseconds;
+        Console.WriteLine($"🛒 ═══ ASSÍNCRONO concluído em {tempoTotal:F0}ms ═══");
+        Console.WriteLine($"🛒 (notificação será processada em background)\n");
+
+        return Accepted(new
+        {
+            pedidoId = pedido.Id,
+            status = "aprovado",
+            notificacao = "pendente — será processada em background",
+            fluxo = "assincrono",
+            tempoTotalMs = tempoTotal,
+            observacao = "⚡ Compare este tempo com o fluxo síncrono!"
+        });
+    }
+}

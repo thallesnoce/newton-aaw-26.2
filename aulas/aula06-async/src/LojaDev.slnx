@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="LojaDev.Compartilhado/LojaDev.Compartilhado.csproj" />
+  <Project Path="LojaDev.LojaApi/LojaDev.LojaApi.csproj" />
+  <Project Path="LojaDev.NotificacaoApi/LojaDev.NotificacaoApi.csproj" />
+  <Project Path="LojaDev.PagamentoApi/LojaDev.PagamentoApi.csproj" />
+</Solution>
