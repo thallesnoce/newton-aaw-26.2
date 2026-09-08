@@ -181,11 +181,21 @@ Comandos essenciais:
 | `git push` | Envia os commits para o GitHub | [Push commits](https://docs.github.com/pt/get-started/using-git/pushing-commits-to-a-remote-repository) |
 | `git pull` | Traz as atualizações do GitHub | [Getting changes](https://docs.github.com/pt/get-started/using-git/getting-changes-from-a-remote-repository) |
 
-> ⚠️ **Faça `commit` e `push` ao final de toda aula.** O que não estiver no GitHub não será considerado entregue.
+> ⚠️ **Faça `commit` e `push` ao final de toda aula.** O que não estiver no GitHub não será considerado entregue. Veja os prazos na **seção 7**.
 
 ---
 
-## 7. Repositório público ou privado?
+## 7. Acompanhamento de participação e prazos
+
+As atividades de fixação e aulas práticas são acompanhadas pelo histórico de commits do repositório. Consulte o documento completo com regras, prazos e tabela de datas:
+
+📄 **[PARTICIPACAO-AULAS-2026.2.md](PARTICIPACAO-AULAS-2026.2.md)**
+
+> ⚠️ **Resumo:** cada atividade deve ser commitada em até **2 dias corridos** após a aula. Exceção: aulas 01–04 podem ser entregues até **10/09/2026**.
+
+---
+
+## 8. Repositório público ou privado?
 
 - **Público:** qualquer pessoa vê seu código. Ótimo para seu portfólio.
 - **Privado:** só você vê. Neste caso, **você precisa dar acesso ao professor** como colaborador.
@@ -196,7 +206,7 @@ Comandos essenciais:
 
 ---
 
-## 8. Modelo de README.md do seu repositório
+## 9. Modelo de README.md do seu repositório
 
 Copie e adapte no arquivo `README.md` da raiz:
 
@@ -226,7 +236,7 @@ Em cada disciplina:
 
 ---
 
-## 9. Checklist de entrega
+## 10. Checklist de entrega
 
 Antes de enviar o link ao professor, confirme:
 
@@ -240,7 +250,7 @@ Antes de enviar o link ao professor, confirme:
 
 ---
 
-## 10. Problemas comuns
+## 11. Problemas comuns
 
 | Problema | Solução |
 |---|---|
