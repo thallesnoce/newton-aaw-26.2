@@ -1,0 +1,196 @@
+====================================================================
+ GABARITO — API Vazada / Operação Blindagem (Aula 06)
+ USO DO PROFESSOR. Não distribuir antes da fase de correção.
+====================================================================
+
+--------------------------------------------------------------------
+FALHA 1 — Injeção de SQL
+Arquivo: Controllers/ProdutosController.cs, método Buscar
+OWASP Top 10:2025 — Injection
+--------------------------------------------------------------------
+Por que acontece: o texto digitado pelo usuário é concatenado na string
+SQL. O banco não distingue "dado" de "comando" — o que veio na query
+string passa a fazer parte da instrução.
+
+Demonstração: GET /api/produtos/buscar?nome=%' OR '1'='1
+Retorna a tabela inteira, ignorando o filtro.
+
+CORREÇÃO (opção A — parâmetro posicional):
+
+    [HttpGet("buscar")]
+    public IActionResult Buscar(string nome)
+    {
+        var resultado = _db.Produtos
+            .FromSqlRaw("SELECT * FROM Produtos WHERE Nome LIKE {0}", $"%{nome}%")
+            .ToList();
+        return Ok(resultado);
+    }
+
+CORREÇÃO (opção B — interpolada, também parametrizada pelo EF):
+
+        .FromSqlInterpolated($"SELECT * FROM Produtos WHERE Nome LIKE {"%" + nome + "%"}")
+
+CORREÇÃO (opção C — a mais simples: nem escrever SQL):
+
+        var resultado = _db.Produtos
+            .Where(p => p.Nome.Contains(nome))
+            .ToList();
+
+Ponto a martelar: a diferença não é "escapar caracteres", é SEPARAR
+comando de dado. O parâmetro nunca vira instrução.
+
+
+--------------------------------------------------------------------
+FALHA 2 — IDOR / Broken Access Control
+Arquivo: Controllers/PedidosController.cs, métodos GetById e GetByUsuario
+OWASP Top 10:2025 — #1 Broken Access Control
+--------------------------------------------------------------------
+Por que acontece: o [Authorize] garante que HÁ um usuário logado
+(autenticação), mas nada compara o dono do pedido com quem pediu
+(autorização). Trocar o número na URL basta.
+
+Demonstração: login como joao@loja.com (id 42) e GET /api/pedidos/103
+(pedido da Maria, id 43) — devolve 200 com os dados dela.
+
+CORREÇÃO:
+
+    using System.Security.Claims;
+
+    private int UsuarioLogadoId =>
+        int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    [Authorize]
+    [HttpGet("{id}")]
+    public IActionResult GetById(int id)
+    {
+        var pedido = _db.Pedidos.Find(id);
+        if (pedido is null) return NotFound();
+
+        if (pedido.UsuarioId != UsuarioLogadoId)
+            return Forbid();          // 403 — autenticado, mas sem direito
+
+        return Ok(pedido);
+    }
+
+    [Authorize]
+    [HttpGet("usuario/{usuarioId}")]
+    public IActionResult GetByUsuario(int usuarioId)
+    {
+        if (usuarioId != UsuarioLogadoId) return Forbid();
+        return Ok(_db.Pedidos.Where(p => p.UsuarioId == usuarioId).ToList());
+    }
+
+Variante melhor ainda (some com o parâmetro): GET /api/pedidos/meus,
+que ignora qualquer id vindo do cliente e usa só a claim do token.
+
+Discussão: 403 (Forbid) x 404. Alguns times devolvem 404 para não
+revelar que o recurso existe. Vale citar — conecta com a Aula 07.
+
+
+--------------------------------------------------------------------
+FALHA 3 — Segredos no código + erro detalhado exposto
+Arquivo: Program.cs
+OWASP Top 10:2025 — #2 Security Misconfiguration
+                    (+ Mishandling of Exceptional Conditions)
+--------------------------------------------------------------------
+Parte A — a connection string e a chave do JWT estão em constantes no
+código, que vai versionado para o Git. Quem tem a chave forja tokens.
+
+Parte B — UseDeveloperExceptionPage() está ligado incondicionalmente:
+qualquer erro devolve stack trace, caminhos do servidor e trechos do
+código-fonte.
+
+Demonstração: GET /api/produtos/quebrar
+
+CORREÇÃO — Parte A (configuração, nunca código):
+
+  appsettings.json:
+    {
+      "ConnectionStrings": { "Default": "Data Source=apivazada.db" },
+      "Jwt": { "Key": "" }
+    }
+
+  Chave real fora do repositório:
+    dotnet user-secrets init
+    dotnet user-secrets set "Jwt:Key" "<chave-longa-aleatoria>"
+  (em produção: variável de ambiente ou cofre de segredos)
+
+  Program.cs:
+    var conn = builder.Configuration.GetConnectionString("Default")!;
+    var jwtKey = builder.Configuration["Jwt:Key"]
+        ?? throw new InvalidOperationException("Jwt:Key não configurada.");
+
+  Aplicar o mesmo em LoginController: injetar IConfiguration e ler
+  _config["Jwt:Key"] em vez da constante repetida.
+
+CORREÇÃO — Parte B (erro detalhado só em desenvolvimento):
+
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseDeveloperExceptionPage();
+        app.UseSwagger();
+        app.UseSwaggerUI();
+    }
+    else
+    {
+        app.UseExceptionHandler("/erro");
+    }
+
+  E um endpoint genérico:
+
+    app.Map("/erro", () => Results.Problem("Erro interno."));
+
+Observação para a turma: a chave que já vazou no Git continua vazada.
+Corrigir o código não basta — a chave precisa ser ROTACIONADA.
+
+
+--------------------------------------------------------------------
+FALHA 4 — Mass Assignment
+Arquivo: Controllers/UsuariosController.cs, método Atualizar
+OWASP Top 10:2025 — Broken Access Control (escalação de privilégio)
+--------------------------------------------------------------------
+Por que acontece: o método recebe a ENTIDADE Usuario direto do corpo da
+requisição. Todo campo do modelo vira campo editável pelo cliente —
+inclusive Role.
+
+Demonstração: PUT /api/usuarios/42
+  { "nome": "Joao", "email": "joao@loja.com", "role": "Admin" }
+O usuário comum se promove a Admin. Novo login já traz role Admin.
+
+CORREÇÃO — DTO de entrada com apenas o que o cliente pode mudar:
+
+    public record AtualizarUsuarioRequest(string Nome, string Email);
+
+    [Authorize]
+    [HttpPut("{id}")]
+    public IActionResult Atualizar(int id, [FromBody] AtualizarUsuarioRequest dados)
+    {
+        var usuario = _db.Usuarios.Find(id);
+        if (usuario is null) return NotFound();
+
+        // Bônus: aqui cabe também a checagem de dono da Falha 2
+        if (usuario.Id != UsuarioLogadoId) return Forbid();
+
+        usuario.Nome = dados.Nome;
+        usuario.Email = dados.Email;
+        // Role NÃO é tocada: mudar papel é operação administrativa.
+
+        _db.SaveChanges();
+        return Ok(new { usuario.Id, usuario.Nome, usuario.Email, usuario.Role });
+    }
+
+Princípio: nunca faça binding direto da entidade de domínio. Modelo de
+entrada e modelo de persistência são coisas diferentes.
+
+
+====================================================================
+ FECHAMENTO — o fio condutor das 4 correções
+====================================================================
+1. Nunca confie na entrada do cliente          (falhas 1 e 4)
+2. Autenticado não é o mesmo que autorizado    (falha 2)
+3. Segredo é configuração, não código          (falha 3A)
+4. Mensagem de erro é para o log, não para o atacante (falha 3B)
+
+Gancho para a Aula 07: a correção da Falha 2 dependeu de saber QUEM é o
+usuário — a claim do token. Como esse token é emitido e provado é o
+assunto da próxima aula (JWT, OAuth 2.0 e OpenID Connect).

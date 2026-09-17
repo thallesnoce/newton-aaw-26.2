@@ -1,0 +1,94 @@
+{
+  "info": {
+    "name": "Aula 06 - API Vazada (Operação Blindagem)",
+    "description": "Reproduz as 4 falhas da API Vazada. Rode o Login primeiro: ele salva o token na variável {{token}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5275" },
+    { "key": "token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0 - Login (João, id 42, role User)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('token', body.token);",
+              "console.log('Token salvo. usuarioId=' + body.usuarioId + ' role=' + body.role);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"joao@loja.com\",\n  \"senha\": \"joao123\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/login", "host": ["{{baseUrl}}"], "path": ["api", "login"] }
+      }
+    },
+    {
+      "name": "FALHA 1 - SQL Injection (retorna tudo)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/produtos/buscar?nome=%' OR '1'='1",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "produtos", "buscar"],
+          "query": [{ "key": "nome", "value": "%' OR '1'='1" }]
+        },
+        "description": "Depois de corrigido: deve retornar lista vazia (nenhum produto com esse nome)."
+      }
+    },
+    {
+      "name": "FALHA 2 - IDOR (João lê o pedido da Maria)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": { "raw": "{{baseUrl}}/api/pedidos/103", "host": ["{{baseUrl}}"], "path": ["api", "pedidos", "103"] },
+        "description": "Pedido 103 pertence à Maria (id 43). Depois de corrigido: 403 Forbidden."
+      }
+    },
+    {
+      "name": "FALHA 3 - Stack trace exposto",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/produtos/quebrar", "host": ["{{baseUrl}}"], "path": ["api", "produtos", "quebrar"] },
+        "description": "Depois de corrigido: mensagem genérica, sem stack trace nem caminhos do servidor."
+      }
+    },
+    {
+      "name": "FALHA 4 - Mass assignment (vira Admin)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Joao Silva\",\n  \"email\": \"joao@loja.com\",\n  \"role\": \"Admin\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/usuarios/42", "host": ["{{baseUrl}}"], "path": ["api", "usuarios", "42"] },
+        "description": "Depois de corrigido: a role deve continuar 'User'. Refaça o Login para conferir a claim do token."
+      }
+    },
+    {
+      "name": "Conferência - perfil do usuário 42",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": { "raw": "{{baseUrl}}/api/usuarios/42", "host": ["{{baseUrl}}"], "path": ["api", "usuarios", "42"] }
+      }
+    }
+  ]
+}

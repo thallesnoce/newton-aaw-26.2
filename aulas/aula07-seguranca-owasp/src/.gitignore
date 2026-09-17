@@ -1,0 +1,17 @@
+# .NET
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
+
+# Database
+seguranca.db
+seguranca.db-shm
+seguranca.db-wal
+
+# VS Code
+.vscode/
+
+# User settings
+appsettings.Development.json
