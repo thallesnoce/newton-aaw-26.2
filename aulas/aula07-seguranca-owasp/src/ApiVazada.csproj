@@ -1,19 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ApiVazada</RootNamespace>
+    <!-- .NET 6 saiu do suporte: silencia o aviso NETSDK1138 em quem tem SDK mais novo. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <!-- Permite rodar em maquinas que so tem .NET 8/9/10 instalado. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
-    <!-- Pinado acima da versão trazida pelo EF Core: a 2.1.11 tem CVE aberto.
-         Exemplo prático de Software Supply Chain Failures (OWASP Top 10:2025). -->
-    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="6.0.36" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="6.0.36" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+    <!-- Pinado acima da versão trazida pelo EF Core: a 2.0.x/2.1.11 tem CVE aberto
+         (GHSA-2m69-gcr7-jv3q). Exemplo prático de Software Supply Chain Failures
+         (OWASP Top 10:2025). -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
   </ItemGroup>
 
 </Project>

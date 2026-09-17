@@ -11,6 +11,9 @@ código com um comentário `// FALHA N (não corrija ainda!)`.
 
 ## Como rodar
 
+Pré-requisito: **.NET 6 SDK** (ou superior — o projeto usa `RollForward`, então roda
+também em quem só tem .NET 8/9/10 instalado).
+
 ```bash
 cd src
 dotnet run

@@ -6,9 +6,9 @@ obj/
 *.sln.docstates
 
 # Database
-seguranca.db
-seguranca.db-shm
-seguranca.db-wal
+apivazada.db
+apivazada.db-shm
+apivazada.db-wal
 
 # VS Code
 .vscode/
