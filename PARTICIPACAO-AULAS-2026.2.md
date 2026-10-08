@@ -57,9 +57,9 @@ Cada atividade deve ser commitada e pushada em até **2 (dois) dias corridos** c
 
 > **Exemplo:** a Aula 05 acontece na quinta-feira 03/09 → o commit deve estar no GitHub até **sábado 05/09, 23h59**.
 
-### Exceção — Aulas 01 a 04
+### Exceção — Aulas 01 a 05
 
-Como as primeiras semanas são de adaptação ao fluxo de trabalho com Git, as aulas 01, 02, 03 e 04 têm **prazo estendido**: todas podem ser entregues até **10/09/2026 (quarta-feira), 23h59**.
+Como as primeiras semanas são de adaptação ao fluxo de trabalho com Git, as aulas 01, 02, 03, 04 e 05 têm **prazo estendido**: todas podem ser entregues até **10/09/2026 (quarta-feira), 23h59**.
 
 ---
 
@@ -71,7 +71,7 @@ Como as primeiras semanas são de adaptação ao fluxo de trabalho com Git, as a
 | 02 | 13/08 (qui) | REST: Fundamentos | `aaw/aulas/aula-02/` | **10/09** ⚠️ |
 | 03 | 20/08 (qui) | REST: Design de APIs | `aaw/aulas/aula-03/` | **10/09** ⚠️ |
 | 04 | 27/08 (qui) | Persistência Distribuída | `aaw/aulas/aula-04/` | **10/09** ⚠️ |
-| 05 | 03/09 (qui) | Comunicação entre Serviços | `aaw/aulas/aula-05/` | 05/09 |
+| 05 | 03/09 (qui) | Comunicação entre Serviços | `aaw/aulas/aula-05/` | **10/09** ⚠️ |
 | 06 | 10/09 (qui) | Segurança em Aplicações Web (OWASP) | `aaw/aulas/aula-06/` | 12/09 |
 | 07 | 17/09 (qui) | Autenticação e Autorização | `aaw/aulas/aula-07/` | 19/09 |
 | 08 | 08/10 (qui) | RBAC e Controle de Acesso | `aaw/aulas/aula-08/` | 10/10 |
@@ -81,7 +81,7 @@ Como as primeiras semanas são de adaptação ao fluxo de trabalho com Git, as a
 | 12 | 05/11 (qui) | Observabilidade | `aaw/aulas/aula-12/` | 07/11 |
 | 13 | 12/11 (qui) | Conteinerização | `aaw/aulas/aula-13/` | 14/11 |
 
-> ⚠️ **Prazo de exceção:** aulas 01 a 04 podem ser entregues até 10/09/2026, 23h59.
+> ⚠️ **Prazo de exceção:** aulas 01 a 05 podem ser entregues até 10/09/2026, 23h59.
 >
 > Todos os demais prazos vencem às **23h59** do dia indicado.
 
@@ -159,7 +159,7 @@ Se o comando acima retornar vazio, **seu commit não está no prazo**.
 | Regra | Detalhe |
 |---|---|
 | **Prazo padrão** | 2 dias corridos após a aula, 23h59 |
-| **Exceção** | Aulas 01–04 → até 10/09/2026 |
+| **Exceção** | Aulas 01–05 → até 10/09/2026 |
 | **Estrutura** | `aaw/aulas/aula-XX/` (XX com dois dígitos) |
 | **Evidência** | Commit no GitHub com arquivos reais |
 | **Atraso** | Não aceito — sem reabertura de prazo |

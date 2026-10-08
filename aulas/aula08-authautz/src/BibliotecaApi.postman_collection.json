@@ -1,0 +1,180 @@
+{
+  "info": {
+    "name": "Aula 07 - API Biblioteca (Operação Crachá)",
+    "description": "Ciclo completo de autenticação e autorização. Execute na ordem: os logins salvam os tokens nas variáveis {{tokenLeitor}} e {{tokenBibliotecario}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5290" },
+    { "key": "tokenLeitor", "value": "" },
+    { "key": "tokenBibliotecario", "value": "" },
+    { "key": "tokenExpirado", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1 - POST /livros SEM token (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('401 Unauthorized - nao sei quem voce e', () => pm.response.to.have.status(401));"]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"titulo\": \"Livro Sem Token\",\n  \"autor\": \"Anonimo\",\n  \"ano\": 2024,\n  \"disponivel\": true\n}" },
+        "url": { "raw": "{{baseUrl}}/api/livros", "host": ["{{baseUrl}}"], "path": ["api", "livros"] }
+      }
+    },
+    {
+      "name": "2 - Login Leitor",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('tokenLeitor', pm.response.json().token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"leitor@biblioteca.com\",\n  \"senha\": \"leitor123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "3 - POST /livros com token Leitor (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": ["pm.test('201 Created', () => pm.response.to.have.status(201));"] }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{tokenLeitor}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"titulo\": \"Criando Microsservicos\",\n  \"autor\": \"Sam Newman\",\n  \"ano\": 2022,\n  \"disponivel\": true\n}" },
+        "url": { "raw": "{{baseUrl}}/api/livros", "host": ["{{baseUrl}}"], "path": ["api", "livros"] }
+      }
+    },
+    {
+      "name": "4 - DELETE com token Leitor (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('403 Forbidden - sei quem voce e, mas nao pode', () => pm.response.to.have.status(403));"]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{tokenLeitor}}" }],
+        "url": { "raw": "{{baseUrl}}/api/livros/1", "host": ["{{baseUrl}}"], "path": ["api", "livros", "1"] }
+      }
+    },
+    {
+      "name": "5 - Login Bibliotecario",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('tokenBibliotecario', pm.response.json().token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"biblio@biblioteca.com\",\n  \"senha\": \"biblio123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "6 - DELETE com token Bibliotecario (204)",
+      "event": [
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{tokenBibliotecario}}" }],
+        "url": { "raw": "{{baseUrl}}/api/livros/1", "host": ["{{baseUrl}}"], "path": ["api", "livros", "1"] }
+      }
+    },
+    {
+      "name": "7a - Gerar token expirado",
+      "event": [
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('tokenExpirado', pm.response.json().token);"] }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"biblio@biblioteca.com\",\n  \"senha\": \"biblio123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login-expirado", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login-expirado"] }
+      }
+    },
+    {
+      "name": "7b - POST com token EXPIRADO (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": ["pm.test('401 - token vencido', () => pm.response.to.have.status(401));"] }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{tokenExpirado}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"titulo\": \"Teste\",\n  \"autor\": \"Teste\",\n  \"ano\": 2024,\n  \"disponivel\": true\n}" },
+        "url": { "raw": "{{baseUrl}}/api/livros", "host": ["{{baseUrl}}"], "path": ["api", "livros"] }
+      }
+    },
+    {
+      "name": "8 - GET /livros (publico, 200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": ["pm.test('200 OK sem token', () => pm.response.to.have.status(200));"] }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/livros", "host": ["{{baseUrl}}"], "path": ["api", "livros"] }
+      }
+    },
+    {
+      "name": "9 - GET /quem-sou-eu (claims do token)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{tokenBibliotecario}}" }],
+        "url": { "raw": "{{baseUrl}}/api/quem-sou-eu", "host": ["{{baseUrl}}"], "path": ["api", "quem-sou-eu"] },
+        "description": "Cole o mesmo token em jwt.io e compare: o payload e legivel por qualquer um."
+      }
+    }
+  ]
+}

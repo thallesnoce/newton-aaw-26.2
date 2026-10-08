@@ -1,0 +1,181 @@
+====================================================================
+ GABARITO — API Biblioteca com JWT (Aula 07 — AuthN & AuthZ)
+ USO DO PROFESSOR. Código conferido: compila e passa nos 9 testes
+ do ciclo listados no fim deste arquivo.
+====================================================================
+
+--------------------------------------------------------------------
+ETAPA 1 — Configurar a autenticação JWT (Program.cs)
+--------------------------------------------------------------------
+Program.cs completo, já resolvido:
+
+    using System.Text;
+    using BibliotecaApi.Data;
+    using Microsoft.AspNetCore.Authentication.JwtBearer;
+    using Microsoft.IdentityModel.Tokens;
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    builder.Services.AddControllers();
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen();
+    builder.Services.AddSingleton<BibliotecaStore>();
+
+    var jwt = builder.Configuration.GetSection("Jwt");
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwt["Issuer"],
+            ValidAudience = jwt["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwt["Key"]!)),
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+
+    builder.Services.AddAuthorization();
+
+    var app = builder.Build();
+
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI();
+    }
+
+    app.UseAuthentication();   // ANTES
+    app.UseAuthorization();    // DEPOIS
+
+    app.MapControllers();
+    app.Run();
+
+Pontos a explorar com a turma:
+- ValidateLifetime é o que transforma token vencido em 401.
+- ClockSkew padrão é 5 MINUTOS. Sem TimeSpan.Zero, um token "expirado"
+  ainda é aceito por até 5 min — é o motivo de o teste do token
+  expirado às vezes "não funcionar" em outras turmas.
+- Ordem dos middlewares: invertendo, o User chega vazio no controller e
+  TODO [Authorize] devolve 401. Vale demonstrar ao vivo.
+
+
+--------------------------------------------------------------------
+ETAPA 2 — Emitir o token (Controllers/AuthController.cs)
+--------------------------------------------------------------------
+Substituir os TODO 2.1/2.2 e o throw por:
+
+    var usuario = BibliotecaStore.Autenticar(request.Email, request.Senha);
+    if (usuario is null)
+        return Unauthorized(new { message = "Credenciais inválidas." });
+
+    var token = GerarToken(usuario);
+    return Ok(new { token, nome = usuario.Nome, role = usuario.Role });
+
+O método GerarToken já vem pronto no template — o objetivo é que os
+alunos LEIAM a montagem das claims, não que a reescrevam.
+
+Perguntas para conduzir:
+- "O payload é criptografado?" NÃO. É Base64Url — qualquer um lê.
+  Cole o token em jwt.io e mostre. Por isso nada de senha ou dado
+  sensível no payload.
+- "Então o que a assinatura protege?" A INTEGRIDADE: sem a chave,
+  ninguém consegue alterar a role e manter o token válido.
+- Peça para editarem um caractere do token no Postman: vira 401.
+
+
+--------------------------------------------------------------------
+ETAPA 3 — Proteger a escrita (Controllers/LivrosController.cs)
+--------------------------------------------------------------------
+Adicionar o using e os atributos:
+
+    using Microsoft.AspNetCore.Authorization;
+
+    [Authorize]
+    [HttpPost]
+    public ActionResult<Livro> Criar(...)
+
+    [Authorize]
+    [HttpPut("{id}")]
+    public IActionResult Atualizar(...)
+
+GET continua público de propósito: consultar o acervo não exige login.
+Isso deixa claro que autorização é decisão POR ENDPOINT, não do sistema
+inteiro.
+
+
+--------------------------------------------------------------------
+ETAPA 4 — Exigir a role (Controllers/LivrosController.cs)
+--------------------------------------------------------------------
+    [Authorize(Roles = "Bibliotecario")]
+    [HttpDelete("{id}")]
+    public IActionResult Remover(int id) => ...
+
+Resultado: token de Leitor recebe 403 Forbidden; token de Bibliotecario
+recebe 204 No Content.
+
+ESTE É O PONTO ALTO DA AULA — 401 x 403:
+  401 Unauthorized = "não sei quem você é" (falta token, token inválido
+      ou expirado). O nome do status é histórico e enganoso: ele fala de
+      AUTENTICAÇÃO.
+  403 Forbidden    = "sei exatamente quem você é, e você não pode".
+      Fala de AUTORIZAÇÃO.
+Analogia: 401 é o porteiro que não te deixa entrar sem crachá; 403 é o
+crachá que abre a catraca mas não abre a sala do servidor.
+
+
+--------------------------------------------------------------------
+ETAPA 5 — O ciclo no Postman (o que cobrar como entregável)
+--------------------------------------------------------------------
+Coleção pronta: BibliotecaApi.postman_collection.json
+
+  1. POST /api/livros sem token .................... 401
+  2. POST /api/auth/login (leitor) ................. 200 + token
+  3. POST /api/livros com token de Leitor .......... 201
+  4. DELETE /api/livros/1 com token de Leitor ...... 403
+  5. POST /api/auth/login (bibliotecário) .......... 200 + token
+  6. DELETE /api/livros/1 com token Bibliotecario .. 204
+  7. POST /api/auth/login-expirado + POST /livros .. 401
+  8. GET /api/livros (sem token) ................... 200
+  9. GET /api/quem-sou-eu com token ................ claims visíveis
+
+Todos os 9 foram executados nesta solução e conferem.
+
+
+--------------------------------------------------------------------
+DESAFIOS BÔNUS (para duplas que terminarem cedo)
+--------------------------------------------------------------------
+1. Reduza ExpiresInMinutes para 1 em appsettings.json e observe a API
+   deixar de aceitar o token no meio do teste. Discussão: por que
+   tokens curtos + refresh token, em vez de token longo?
+
+2. Troque um caractere da chave em appsettings.json, reinicie e reuse um
+   token antigo: 401. É a assinatura sendo verificada.
+
+3. Mova a chave para fora do código versionado:
+       dotnet user-secrets init
+       dotnet user-secrets set "Jwt:Key" "<chave-longa>"
+   Conecta direto com a Falha 3 corrigida na Aula 06.
+
+4. Crie a policy "PodeRemover" com AddAuthorization(...RequireRole(...))
+   e use [Authorize(Policy = "PodeRemover")]. Gancho para a Aula 08
+   (RBAC), onde papéis viram matriz de permissões.
+
+
+--------------------------------------------------------------------
+ERROS MAIS COMUNS EM SALA
+--------------------------------------------------------------------
+- Esquecer app.UseAuthentication() → tudo 401, mesmo com token bom.
+- Inverter Authentication/Authorization → mesmo sintoma.
+- Escrever "Bearer" errado no header (ou colar o token com aspas).
+- Role no plural/minúscula ("bibliotecario") → 403 inesperado; a
+  comparação é sensível a maiúsculas.
+- Copiar o token junto com quebra de linha do terminal.
