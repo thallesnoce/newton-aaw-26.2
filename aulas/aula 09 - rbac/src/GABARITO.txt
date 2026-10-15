@@ -1,0 +1,268 @@
+====================================================================
+ GABARITO — API Biblioteca, Operação Crachá Nível 2 (Aula 09 —
+ RBAC, ABAC e PBAC)
+ USO DO PROFESSOR. Código conferido: com as 4 correções abaixo,
+ compila e passa nos 18 testes do ciclo listados no fim do arquivo.
+ A recarga a quente do politicas.json (Falha 4) também foi conferida.
+====================================================================
+
+--------------------------------------------------------------------
+FALHA 1 — RBAC: atributos não batem com a matriz
+          (Controllers/LivrosController.cs + Program.cs)
+--------------------------------------------------------------------
+Sintoma: Ana (Leitor) cadastra e edita livro (201/204); Beto
+(Bibliotecario) remove livro (204). A matriz diz: cadastrar/editar =
+Bibliotecario + Admin; remover = só Admin.
+
+Causa: [Authorize] puro só pergunta "está logado?" (é AUTENTICAÇÃO,
+herança da Aula 08). E o DELETE tem um papel a mais que a matriz.
+
+Correção preferida — policies nomeadas em Program.cs, dentro do
+AddAuthorization:
+
+    options.AddPolicy("GerenciarAcervo", p => p.RequireRole("Bibliotecario", "Admin"));
+    options.AddPolicy("RemoverLivro", p => p.RequireRole("Admin"));
+
+e nos endpoints:
+
+    [Authorize(Policy = "GerenciarAcervo")]
+    [HttpPost]
+    public ActionResult<Livro> Criar(...)
+
+    [Authorize(Policy = "GerenciarAcervo")]
+    [HttpPut("{id}")]
+    public IActionResult Atualizar(...)
+
+    [Authorize(Policy = "RemoverLivro")]
+    [HttpDelete("{id}")]
+    public IActionResult Remover(int id) => ...
+
+Também aceitável: [Authorize(Roles = "Bibliotecario,Admin")] no POST/PUT
+e [Authorize(Roles = "Admin")] no DELETE. Funciona, mas vale perguntar:
+"chegou o papel Estagiario — quantos arquivos vocês editam em cada
+versão?" Com policy: 1 linha em Program.cs. Com Roles espalhado: todos
+os controllers. É o slide do "if espalhado" em versão de atributo.
+
+Ponto a explorar: Roles = "A,B" é OU (qualquer um dos papéis).
+Dois atributos [Authorize] empilhados são E (precisa satisfazer ambos).
+
+
+--------------------------------------------------------------------
+FALHA 2 — Negar por padrão ausente
+          (Program.cs + Controllers/RelatoriosController.cs)
+--------------------------------------------------------------------
+Sintoma: GET /api/relatorios/leitores SEM TOKEN devolve 200 com CPF e
+telefone de todos os usuários (LGPD!). /api/relatorios/emprestimos idem.
+
+Causa: o controller nasceu sem [Authorize] e a API não tem regra
+padrão — endpoint esquecido = endpoint público.
+
+Correção, em duas partes:
+
+(a) a causa — Program.cs, dentro do AddAuthorization:
+
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+
+    (precisa de using Microsoft.AspNetCore.Authorization; — já existe)
+
+(b) o sintoma — a matriz diz que relatório é só Admin:
+
+    options.AddPolicy("VerRelatorios", p => p.RequireRole("Admin"));
+
+    using Microsoft.AspNetCore.Authorization;
+    ...
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize(Policy = "VerRelatorios")]
+    public class RelatoriosController : ControllerBase
+
+Resultado: sem token → 401; Leitor → 403; Admin → 200.
+
+Pontos a explorar:
+- Quem fizer SÓ (b) passa nos testes. Pergunte: "e o próximo controller
+  que o estagiário criar na sexta-feira?" A FallbackPolicy faz o
+  esquecimento virar 401, não vazamento — é o princípio "negar por
+  padrão" do slide dos 4 princípios.
+- FallbackPolicy só vale para endpoints SEM nenhum atributo de
+  autorização. Por isso os endpoints públicos (GET /livros, /login,
+  /quem-sou-eu) já vinham com [AllowAnonymous]: com a fallback ligada,
+  sem esse atributo eles passariam a exigir login. Demonstre: remova o
+  [AllowAnonymous] do GET /livros e veja virar 401.
+- A fallback exige só "estar logado", não um papel. Negar por padrão
+  NÃO dispensa a matriz — só garante que o pior caso é 401.
+
+
+--------------------------------------------------------------------
+FALHA 3 — ABAC que só olha o papel
+          (Autorizacao/DonoDoEmprestimo.cs)
+--------------------------------------------------------------------
+Sintoma: Ana renova o empréstimo 102, que é do Bruno → 200.
+É o IDOR da Aula 07 de novo, agora "dentro" de uma policy.
+
+Causa: o handler recebe o RECURSO (o empréstimo) e nem olha para ele.
+Decidir por papel aqui é exatamente a pergunta-armadilha do handout:
+"Professor pode lançar nota… de QUALQUER turma?"
+
+Correção — substituir o corpo do HandleRequirementAsync:
+
+    // Atributo do sujeito: papel → Bibliotecário renova qualquer empréstimo.
+    if (context.User.IsInRole("Bibliotecario"))
+    {
+        context.Succeed(requirement);
+        return Task.CompletedTask;
+    }
+
+    // Atributo do sujeito (id no token) × atributo do recurso (dono).
+    var usuarioId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (usuarioId == emprestimo.UsuarioId.ToString())
+        context.Succeed(requirement);
+
+    // Sem Succeed = negado (negar por padrão).
+    return Task.CompletedTask;
+
+    (e no topo: using System.Security.Claims;)
+
+Resultado: Ana renova o 101 (dela) → 200; Ana renova o 102 → 403;
+Beto renova o 102 → 200; Dora (Admin) renova qualquer um → 403.
+
+Pontos a explorar:
+- Nunca chame context.Fail() "por via das dúvidas": não chamar Succeed
+  já nega. Fail() serve para VETAR mesmo que outro handler aprove.
+- Onde mora cada atributo: NameIdentifier e Role vêm do TOKEN (sujeito);
+  UsuarioId vem do BANCO (recurso). O cliente não consegue forjar
+  nenhum dos dois — é por isso que a decisão é confiável.
+- Extensão natural de ABAC: limitar a 2 renovações (atributo do
+  recurso: Renovacoes < 2) ou só em horário de funcionamento
+  (atributo de contexto: DateTime.Now.Hour).
+
+
+--------------------------------------------------------------------
+FALHA 4 — PBAC: política mal escrita (politicas.json)
+--------------------------------------------------------------------
+Sintoma: Ana (Leitor) empresta o livro 4, obra rara → 201, e a
+resposta mostra regra = "Empréstimo do acervo geral".
+
+Causa: o motor usa "primeira aplicável" (first-applicable, termo do
+XACML). A regra genérica (Categoria "*") vem ANTES da específica
+(ObraRara), então casa primeiro e decide sozinha. A regra de obras
+raras nunca é alcançada — está "sombreada".
+
+Correção — SEM tocar em C#, com a API rodando, inverter a ordem
+(da mais específica para a mais genérica):
+
+    "Regras": [
+      {
+        "Nome": "Obras raras só para pesquisa",
+        "Acao": "emprestar",
+        "Categoria": "ObraRara",
+        "Papeis": [ "Pesquisador", "Bibliotecario" ]
+      },
+      {
+        "Nome": "Empréstimo do acervo geral",
+        "Acao": "emprestar",
+        "Categoria": "*",
+        "Papeis": [ "Leitor", "Pesquisador", "Bibliotecario" ]
+      }
+    ]
+
+Também correto: trocar a Categoria da regra geral de "*" para "Comum".
+É até mais robusto (não depende da ordem), mas uma categoria nova
+(ex.: "Periodico") passa a ser negada até alguém escrever regra para
+ela — negar por padrão em ação. Bom debate para a turma.
+
+Resultado: Ana + livro 4 → 403, regra "Obras raras só para pesquisa";
+Carla (Pesquisador) + livro 4 → 201; Ana + livro 1 → 201;
+Dora (Admin) + qualquer livro → 403 (a matriz não dá empréstimo ao Admin
+e nenhuma regra o inclui).
+
+ERRO ESPERADO DE ALGUMAS DUPLAS: tirar "Leitor" da regra geral. Aí a Ana
+não empresta mais NADA. Ou mexer no MotorDePoliticas.cs — o README avisa
+que o motor está correto; o ponto da Falha 4 é que em PBAC a regra é
+DADO, não código.
+
+Pontos a explorar:
+- PAP / PDP / PEP: politicas.json (onde se escreve), MotorDePoliticas
+  (quem decide), EmprestimosController (quem aplica). Mostre que o
+  controller não sabe NADA de papéis.
+- A recarga a quente (reloadOnChange) mostra o ganho: a regra mudou
+  sem recompilar, sem deploy. E o risco: quem pode editar esse arquivo
+  pode dar acesso a si mesmo → a política precisa de versionamento,
+  revisão (PR) e trilha de auditoria, como código.
+- O campo "regra" na resposta é rastreabilidade: toda decisão diz QUAL
+  regra a tomou. Em produção, isso vai para o log de auditoria.
+- No mundo real: OPA/Rego (CNCF), AWS Cedar / Verified Permissions,
+  XACML. Mesmo desenho: política fora do código + motor + ponto de
+  aplicação.
+
+
+--------------------------------------------------------------------
+O CICLO DE TESTES (coleção BibliotecaApi.postman_collection.json)
+--------------------------------------------------------------------
+A coleção faz login dos 5 usuários e depois roda os testes abaixo.
+Os testes têm o resultado CORRETO: antes das correções, ficam vermelhos
+os marcados com (*).
+
+  #   Requisição                                     Antes   Depois
+  01  Ana (Leitor) POST /api/livros ................  201*    403
+  02  Beto (Bibliotecario) POST /api/livros ........  201     201
+  03  Ana (Leitor) PUT /api/livros/1 ...............  204*    403
+  04  Beto DELETE /api/livros/3 ....................  204*    403
+  05  Dora (Admin) DELETE /api/livros/3 ............  404*    204
+       (antes: o livro 3 já tinha sido apagado no teste 04)
+  06  GET /api/relatorios/leitores sem token .......  200*    401
+  07  GET /api/relatorios/emprestimos sem token ....  200*    401
+  08  Ana GET /api/relatorios/leitores .............  200*    403
+  09  Dora GET /api/relatorios/leitores ............  200     200
+  10  Ana renova 101 (dela) ........................  200     200
+  11  Ana renova 102 (do Bruno) ....................  200*    403
+  12  Beto renova 102 ..............................  200     200
+  13  Ana empresta livro 1 (comum) .................  201     201
+  14  Ana empresta livro 4 (obra rara) .............  201*    403
+  15  Carla (Pesquisador) empresta livro 4 .........  201     201
+  16  Dora (Admin) empresta livro 1 ................  403     403
+  17  GET /api/livros sem token ....................  200     200
+  18  POST /api/emprestimos sem token ..............  401     401
+
+Os 18 foram executados nas duas versões (antes/depois) e conferem.
+Reinicie a API entre execuções completas da coleção: os testes 04/05
+apagam o livro 3.
+
+
+--------------------------------------------------------------------
+DESAFIOS BÔNUS (para duplas que terminarem cedo)
+--------------------------------------------------------------------
+1. Crie o papel "Estagiario" (pode cadastrar livro, não pode editar
+   nem remover). Conte quantas linhas mudaram. Compare com o slide do
+   "if espalhado".
+
+2. ABAC com contexto: renovação só se Renovacoes < 2 E fora de atraso
+   (emprestimo.Devolucao >= hoje). Atributos do recurso e do ambiente.
+
+3. PBAC: acrescente ao politicas.json uma regra para a ação "renovar"
+   e faça o motor avaliá-la também. Discussão: a regra "só o dono"
+   cabe nesse formato de política? (Não: o formato só conhece papel e
+   categoria. Políticas reais — Rego, Cedar — expressam
+   "principal.id == resource.owner". Gancho para mostrar uma política
+   Cedar no projetor.)
+
+4. Token sem claim de role (edite o GerarToken): o que acontece em cada
+   endpoint? Negar por padrão em ação.
+
+
+--------------------------------------------------------------------
+ERROS MAIS COMUNS EM SALA
+--------------------------------------------------------------------
+- Papel com grafia diferente ("bibliotecario", "Bibliotecário") → 403
+  inesperado; a comparação é sensível a maiúsculas e acentos.
+- Ligar a FallbackPolicy e remover [AllowAnonymous] do login → ninguém
+  mais consegue token (401 no próprio login).
+- Na Falha 3, comparar com ClaimTypes.Name (nome) em vez de
+  NameIdentifier (id) → sempre 403.
+- Na Falha 4, editar o politicas.json de bin/ em vez do da pasta src/
+  → nada muda. O arquivo lido é o da raiz do projeto.
+- JSON inválido no politicas.json (vírgula sobrando) → a recarga zera
+  as regras e TODO empréstimo vira 403 "(nenhuma regra aplicável)".
+  A API não cai: falha FECHADA, que é o comportamento certo. Conserte o
+  JSON e salve de novo — volta na hora. (Conferido.)

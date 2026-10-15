@@ -1,0 +1,23 @@
+{
+  // Documento de política PBAC — lido por Autorizacao/MotorDePoliticas.cs.
+  // Regras avaliadas NA ORDEM: a primeira cujo alvo (Acao + Categoria) casa DECIDE.
+  // Alterações aqui valem na hora, sem recompilar nem reiniciar a API.
+  //
+  // FALHA 4 (não corrija ainda!) — a Ana (Leitor) consegue emprestar a obra rara.
+  "Politicas": {
+    "Regras": [
+      {
+        "Nome": "Empréstimo do acervo geral",
+        "Acao": "emprestar",
+        "Categoria": "*",
+        "Papeis": [ "Leitor", "Pesquisador", "Bibliotecario" ]
+      },
+      {
+        "Nome": "Obras raras só para pesquisa",
+        "Acao": "emprestar",
+        "Categoria": "ObraRara",
+        "Papeis": [ "Pesquisador", "Bibliotecario" ]
+      }
+    ]
+  }
+}
