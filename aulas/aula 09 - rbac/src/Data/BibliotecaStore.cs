@@ -8,19 +8,19 @@ namespace BibliotecaApi.Data;
 /// </summary>
 public class BibliotecaStore
 {
-    private readonly List<Livro> _livros =
-    [
+    private readonly List<Livro> _livros = new()
+    {
         new Livro { Id = 1, Titulo = "Criando Microsserviços", Autor = "Sam Newman", Ano = 2022 },
         new Livro { Id = 2, Titulo = "Release It!", Autor = "Michael Nygard", Ano = 2018 },
         new Livro { Id = 3, Titulo = "Clean Architecture", Autor = "Robert C. Martin", Ano = 2017 },
         new Livro { Id = 4, Titulo = "Os Lusíadas (edição fac-símile de 1572)", Autor = "Luís de Camões", Ano = 1572, Categoria = "ObraRara" }
-    ];
+    };
 
-    private readonly List<Emprestimo> _emprestimos =
-    [
+    private readonly List<Emprestimo> _emprestimos = new()
+    {
         new Emprestimo { Id = 101, LivroId = 1, UsuarioId = 1, Devolucao = DateOnly.FromDateTime(DateTime.Today.AddDays(7)) },  // da Ana
         new Emprestimo { Id = 102, LivroId = 2, UsuarioId = 2, Devolucao = DateOnly.FromDateTime(DateTime.Today.AddDays(3)) }   // do Bruno
-    ];
+    };
 
     private int _proximoLivroId = 5;
     private int _proximoEmprestimoId = 103;
@@ -29,13 +29,13 @@ public class BibliotecaStore
     /// Usuários fictícios — um por papel da matriz (o README tem a matriz completa).
     /// </summary>
     public static readonly Usuario[] Usuarios =
-    [
+    {
         new Usuario(1, "Ana Leitora", "ana@biblioteca.com", "ana123", "Leitor", "(31) 90000-0001", "000.000.001-91"),
         new Usuario(2, "Bruno Leitor", "bruno@biblioteca.com", "bruno123", "Leitor", "(31) 90000-0002", "000.000.002-72"),
         new Usuario(3, "Carla Pesquisadora", "carla@biblioteca.com", "carla123", "Pesquisador", "(31) 90000-0003", "000.000.003-53"),
         new Usuario(4, "Beto Bibliotecário", "biblio@biblioteca.com", "biblio123", "Bibliotecario", "(31) 90000-0004", "000.000.004-34"),
         new Usuario(5, "Dora Administradora", "admin@biblioteca.com", "admin123", "Admin", "(31) 90000-0005", "000.000.005-15")
-    ];
+    };
 
     public static Usuario? Autenticar(string email, string senha) =>
         Usuarios.FirstOrDefault(u => u.Email == email && u.Senha == senha);

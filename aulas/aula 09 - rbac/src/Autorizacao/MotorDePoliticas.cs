@@ -34,12 +34,12 @@ public class RegraDePolitica
     public string Acao { get; set; } = string.Empty;
     /// <summary>Categoria do livro ou "*" para qualquer categoria.</summary>
     public string Categoria { get; set; } = "*";
-    public List<string> Papeis { get; set; } = [];
+    public List<string> Papeis { get; set; } = new();
 }
 
 public class PoliticasOptions
 {
-    public List<RegraDePolitica> Regras { get; set; } = [];
+    public List<RegraDePolitica> Regras { get; set; } = new();
 }
 
 /// <summary>Resultado da avaliação — inclui QUAL regra decidiu (rastreabilidade).</summary>
