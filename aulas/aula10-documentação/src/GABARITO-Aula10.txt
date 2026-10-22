@@ -1,0 +1,230 @@
+GABARITO — Aula 09 — Documentação OpenAPI (uso exclusivo do professor)
+======================================================================
+
+1) Program.cs COMPLETO após todos os passos (2, 3, 5, 6, 9, 10)
+---------------------------------------------------------------
+
+using System.Text;
+using BibliotecaApi.Data;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddSingleton<BibliotecaRepository>();
+builder.Services.AddControllers();
+
+// JWT pré-pronto (inalterado — não é foco da aula)
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Emissor"],
+            ValidAudience = builder.Configuration["Jwt:Audiencia"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Chave"]!)),
+        };
+    });
+builder.Services.AddAuthorization();
+
+// Passo 2 + 5 + 6b + 9a
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    // Passo 5 — metadados
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Version = "v1",
+        Title = "API da Biblioteca",
+        Description = "API REST para gerenciamento do acervo e empréstimos de uma biblioteca.",
+        Contact = new Microsoft.OpenApi.Models.OpenApiContact
+        {
+            Name = "Equipe de Desenvolvimento",
+            Email = "dev@biblioteca.exemplo.com"
+        }
+    });
+
+    // Passo 6b — XML comments
+    var xmlFilename = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFilename);
+    if (File.Exists(xmlPath))
+    {
+        options.IncludeXmlComments(xmlPath);
+    }
+
+    // Passo 9a — security scheme Bearer (.NET 6 + Swashbuckle 6.5.0 / Microsoft.OpenApi 1.x)
+    // (testado: compila e gera securitySchemes + security no swagger.json; login → Authorize → 200)
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Informe o token JWT obtido em POST /api/auth/login."
+    });
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+var app = builder.Build();
+
+// Passo 3 + 10
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "API da Biblioteca v1");
+    options.RoutePrefix = string.Empty;
+    options.DocumentTitle = "Documentação - API da Biblioteca";
+});
+
+app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();
+
+
+2) Csproj após o Passo 6a (acrescentar ao PropertyGroup)
+--------------------------------------------------------
+<GenerateDocumentationFile>true</GenerateDocumentationFile>
+<NoWarn>$(NoWarn);1591</NoWarn>
+
+E o pacote do Passo 1:
+dotnet add package Swashbuckle.AspNetCore --version 6.5.0
+(versões 7+ não suportam net6.0 — fixar a 6.5.0, a mesma da Aula 09)
+
+
+3) LivrosController.cs COMPLETO documentado (referência do Passo 8)
+-------------------------------------------------------------------
+
+using BibliotecaApi.Data;
+using BibliotecaApi.Models;
+using Microsoft.AspNetCore.Mvc;
+
+namespace BibliotecaApi.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+[Produces("application/json")]
+[Tags("Livros")]
+public class LivrosController : ControllerBase
+{
+    private readonly BibliotecaRepository _repo;
+
+    public LivrosController(BibliotecaRepository repo) => _repo = repo;
+
+    /// <summary>
+    /// Lista os livros do acervo com paginação.
+    /// </summary>
+    /// <param name="pagina">Número da página (a partir de 1).</param>
+    /// <param name="tamanhoPagina">Itens por página (máximo 50).</param>
+    /// <response code="200">Página de livros com metadados de paginação.</response>
+    [HttpGet]
+    [ProducesResponseType(typeof(RespostaPaginada<Livro>), StatusCodes.Status200OK)]
+    public IActionResult ObterTodos(
+        [FromQuery] int pagina = 1,
+        [FromQuery] int tamanhoPagina = 10)
+    { /* corpo original inalterado */ }
+
+    /// <summary>
+    /// Obtém um livro pelo seu ID.
+    /// </summary>
+    /// <param name="id">ID do livro.</param>
+    /// <response code="200">Livro encontrado.</response>
+    /// <response code="404">Livro não encontrado.</response>
+    [HttpGet("{id:int}")]
+    [ProducesResponseType(typeof(Livro), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult ObterPorId(int id) { /* inalterado */ }
+
+    /// <summary>
+    /// Busca livros por título, gênero e/ou autor.
+    /// </summary>
+    /// <param name="titulo">Trecho do título.</param>
+    /// <param name="genero">Gênero exato.</param>
+    /// <param name="autorId">ID do autor.</param>
+    /// <response code="200">Lista (possivelmente vazia) de livros encontrados.</response>
+    [HttpGet("buscar")]
+    [ProducesResponseType(typeof(List<Livro>), StatusCodes.Status200OK)]
+    public IActionResult Buscar(
+        [FromQuery] string? titulo,
+        [FromQuery] string? genero,
+        [FromQuery] int? autorId) { /* inalterado */ }
+
+    /// <summary>
+    /// Cadastra um novo livro no acervo.
+    /// </summary>
+    /// <remarks>
+    /// Exemplo de requisição:
+    ///
+    ///     POST /api/livros
+    ///     {
+    ///         "titulo": "Dom Casmurro",
+    ///         "genero": "Romance",
+    ///         "anoPublicacao": 1899,
+    ///         "autorId": 1
+    ///     }
+    ///
+    /// </remarks>
+    /// <param name="livro">Dados do livro.</param>
+    /// <response code="201">Livro criado com sucesso.</response>
+    /// <response code="400">Dados inválidos.</response>
+    [HttpPost]
+    [ProducesResponseType(typeof(Livro), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public IActionResult Criar([FromBody] Livro livro) { /* inalterado */ }
+
+    /// <summary>
+    /// Atualiza um livro existente.
+    /// </summary>
+    /// <param name="id">ID do livro a atualizar.</param>
+    /// <param name="livro">Novos dados do livro.</param>
+    /// <response code="204">Atualizado com sucesso.</response>
+    /// <response code="404">Livro não encontrado.</response>
+    [HttpPut("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult Atualizar(int id, [FromBody] Livro livro) { /* inalterado */ }
+
+    /// <summary>
+    /// Remove um livro do acervo.
+    /// </summary>
+    /// <param name="id">ID do livro a remover.</param>
+    /// <response code="204">Removido com sucesso.</response>
+    /// <response code="404">Livro não encontrado.</response>
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult Remover(int id) { /* inalterado */ }
+}
+
+Obs.: para os endpoints protegidos (EmprestimosController), acrescentar também:
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+em cada action — o 401 faz parte do contrato de quem exige token.
+
+
+4) Credenciais e fluxo do Authorize (Passo 9b)
+----------------------------------------------
+POST /api/auth/login  { "usuario": "bibliotecario", "senha": "newton123" }
+→ copiar "token" → botão Authorize → colar → Try it out em /api/emprestimos → 200
+No swagger.json: procurar "securitySchemes" (components) e "security" (raiz).
