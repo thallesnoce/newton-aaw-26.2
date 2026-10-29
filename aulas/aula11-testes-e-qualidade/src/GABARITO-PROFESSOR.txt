@@ -1,0 +1,147 @@
+=====================================================================
+AULA 11 — GABARITO DO PROFESSOR (não distribuir aos alunos)
+=====================================================================
+
+O BUG PLANTADO
+--------------
+Arquivo: src/ResilientOrders.Api/Services/PedidoService.cs
+Método:  CalcularDesconto
+
+    if (subtotal > 500m)      // <-- BUG: deveria ser >= 500m
+
+A regra do handout diz "10% a partir de R$500 (inclusive)".
+Com o bug, subtotal EXATAMENTE 500 cai na faixa de 5%:
+    esperado: 500 - 50 (10%) + 0 (frete grátis) = 450,00
+    obtido:   500 - 25 (5%)  + 0               = 475,00
+Só o caso de borda subtotal = 500 revela o problema — é o coração da aula.
+
+CORREÇÃO
+--------
+    if (subtotal >= 500m)
+    {
+        return Math.Round(subtotal * 0.10m, 2);
+    }
+
+TABELA DE CASOS (para o TODO 1 — [Theory]/[InlineData])
+-------------------------------------------------------
+    subtotal | desconto | frete | total   | observação
+    ---------+----------+-------+---------+---------------------------
+      100,00 |     0,00 | 25,00 |  125,00 | exemplo pronto
+      199,99 |     0,00 | 25,00 |  224,99 | borda: abaixo de 200
+      200,00 |    10,00 | 25,00 |  215,00 | borda: 5% começa AQUI
+      299,99 |    15,00 | 25,00 |  309,99 | borda: ainda paga frete
+      300,00 |    15,00 |  0,00 |  285,00 | borda: frete grátis começa
+      499,99 |    25,00 |  0,00 |  474,99 | borda: ainda 5%
+      500,00 |    50,00 |  0,00 |  450,00 | borda: 10% começa — REVELA O BUG
+      600,00 |    60,00 |  0,00 |  540,00 | acima da última faixa
+
+SUÍTE COMPLETA — TESTES UNITÁRIOS
+---------------------------------
+[Theory(DisplayName = "CalcularTotal: tabela de casos do handout")]
+[InlineData(100, 125)]
+[InlineData(199.99, 224.99)]
+[InlineData(200, 215)]
+[InlineData(299.99, 309.99)]
+[InlineData(300, 285)]
+[InlineData(499.99, 474.99)]
+[InlineData(500, 450)]      // falha enquanto o bug existir
+[InlineData(600, 540)]
+public void CalcularTotal_TabelaDoHandout_RetornaTotalEsperado(decimal subtotal, decimal totalEsperado)
+{
+    // Arrange
+    var service = CriarService();
+
+    // Act
+    var total = service.CalcularTotal(subtotal);
+
+    // Assert
+    total.Should().Be(totalEsperado);
+}
+
+[Fact(DisplayName = "CriarPedido: quantidade <= 0 lança ArgumentException")]
+public void CriarPedido_ComQuantidadeZero_LancaArgumentException()
+{
+    // Arrange
+    var mockRepo = new Mock<IPedidoRepositorio>();
+    var service = new PedidoService(mockRepo.Object);
+    var request = new CriarPedidoRequest("Maria", new List<ItemPedido>
+    {
+        new() { ProdutoId = 1, NomeProduto = "Mouse", PrecoUnitario = 50m, Quantidade = 0 }
+    });
+
+    // Act
+    Action act = () => service.CriarPedido(request);
+
+    // Assert
+    act.Should().Throw<ArgumentException>().WithMessage("*maior que zero*");
+    mockRepo.Verify(r => r.Salvar(It.IsAny<Pedido>()), Times.Never);
+}
+
+[Fact(DisplayName = "CriarPedido: pedido sem itens lança InvalidOperationException")]
+public void CriarPedido_SemItens_LancaInvalidOperationException()
+{
+    // Arrange
+    var mockRepo = new Mock<IPedidoRepositorio>();
+    var service = new PedidoService(mockRepo.Object);
+    var request = new CriarPedidoRequest("Maria", new List<ItemPedido>());
+
+    // Act
+    Action act = () => service.CriarPedido(request);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>().WithMessage("*vazio*");
+}
+
+// Bônus
+[Fact(DisplayName = "CriarPedido válido salva 1 vez com valores coerentes")]
+public void CriarPedido_Valido_SalvaUmaVez()
+{
+    // Arrange
+    var mockRepo = new Mock<IPedidoRepositorio>();
+    mockRepo.Setup(r => r.Salvar(It.IsAny<Pedido>())).Returns<Pedido>(p => p);
+    var service = new PedidoService(mockRepo.Object);
+    var request = new CriarPedidoRequest("Maria", new List<ItemPedido>
+    {
+        new() { ProdutoId = 1, NomeProduto = "Teclado", PrecoUnitario = 100m, Quantidade = 2 }
+    });
+
+    // Act
+    var pedido = service.CriarPedido(request);
+
+    // Assert
+    pedido.Subtotal.Should().Be(200m);
+    pedido.Desconto.Should().Be(10m);
+    pedido.Frete.Should().Be(25m);
+    pedido.Total.Should().Be(215m);
+    mockRepo.Verify(r => r.Salvar(It.IsAny<Pedido>()), Times.Once);
+}
+
+SUÍTE COMPLETA — TESTE DE INTEGRAÇÃO
+------------------------------------
+[Fact(DisplayName = "POST /api/pedidos: 201 válido e 400 sem itens")]
+public async Task PostPedidos_Valido201_Invalido400()
+{
+    // Arrange
+    var valido = new
+    {
+        nomeCliente = "Maria",
+        itens = new[] { new { produtoId = 1, nomeProduto = "Mouse", precoUnitario = 50m, quantidade = 2 } }
+    };
+    var invalido = new { nomeCliente = "Maria", itens = new object[0] };
+
+    // Act
+    var respValido = await _fixture.HttpClient.PostAsJsonAsync("/api/pedidos", valido);
+    var respInvalido = await _fixture.HttpClient.PostAsJsonAsync("/api/pedidos", invalido);
+
+    // Assert
+    respValido.StatusCode.Should().Be(HttpStatusCode.Created);
+    respValido.Headers.Location.Should().NotBeNull();
+    respInvalido.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    (await respInvalido.Content.ReadAsStringAsync()).Should().Contain("vazio");
+}
+
+CONDUÇÃO
+--------
+1. Alunos rodam `dotnet test` no início: 2 exemplos passam, TODOs aparecem como Skipped.
+2. Ao preencher a [Theory] com a tabela, o caso 500 FALHA -> discussão sobre bordas.
+3. Corrigem o service, suíte fica verde. Só então seguem para a integração.
