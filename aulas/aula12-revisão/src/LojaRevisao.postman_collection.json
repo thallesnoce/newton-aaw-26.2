@@ -1,0 +1,1418 @@
+{
+  "info": {
+    "name": "Aula 11.1 - LojaRevisao (Operação Pente-Fino)",
+    "description": "Uma falha por aula (01 a 11). Os testes afirmam o resultado CORRETO: vermelho = falha ainda aberta. Rode a coleção inteira (Run collection) e reinicie a API depois de cada correção.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 · Preparar: rode sempre primeiro",
+      "description": "Faz login dos 3 usuários e guarda os tokens nas variáveis da coleção.",
+      "item": [
+        {
+          "name": "Login: Ana (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · tokenAna obtido', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('tokenAna', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@loja.com\",\n  \"senha\": \"admin123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login: João (Cliente, id 42)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · tokenJoao obtido', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('tokenJoao', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"joao@loja.com\",\n  \"senha\": \"joao123\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 01 · AULA 01 · Fronteira entre módulos",
+      "description": "Pedidos não pode mexer direto nos dados do Catálogo.",
+      "item": [
+        {
+          "name": "Estoque do produto 1 (antes)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('estoqueP1', pm.response.json().estoque);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos",
+                "1"
+              ]
+            }
+          }
+        },
+        {
+          "name": "João pede 999.999 unidades",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F01 · estoque insuficiente responde 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": [\n    {\n      \"produtoId\": 1,\n      \"quantidade\": 999999\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Estoque do produto 1 (depois)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F01 · o estoque não mudou nem ficou negativo', () => {",
+                  "  pm.expect(pm.response.json().estoque).to.eql(pm.collectionVariables.get('estoqueP1'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos",
+                "1"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 02 · AULA 02 · Status code",
+      "description": "O status code é o contrato: 404 para inexistente; 201 + Location para criação.",
+      "item": [
+        {
+          "name": "Produto inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F02 · produto inexistente responde 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos/99999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos",
+                "99999"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ana cria um produto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F02 · criação responde 201', () => pm.response.to.have.status(201));",
+                  "pm.test('F02 · criação informa o header Location', () => pm.response.to.have.header('Location'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAna}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Webcam HD\",\n  \"preco\": 199.9,\n  \"estoque\": 10\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 03 · AULA 03 · Design da URI",
+      "description": "Sem verbo na URI, GET não altera dados: DELETE /api/v1/pedidos/{id} responde 204.",
+      "item": [
+        {
+          "name": "João cria um pedido para cancelar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('pedidoCancelar', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": [\n    {\n      \"produtoId\": 2,\n      \"quantidade\": 1\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Rota antiga não pode cancelar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F03 · a rota com verbo na URI não existe mais', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cancelarPedido?id={{pedidoCancelar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cancelarPedido"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{pedidoCancelar}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "O pedido continua lá",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F03 · um GET não cancelou o pedido', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos/{{pedidoCancelar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos",
+                "{{pedidoCancelar}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancela do jeito REST",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F03 · DELETE responde 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos/{{pedidoCancelar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos",
+                "{{pedidoCancelar}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancela de novo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F03 · repetir o DELETE responde 404: o estado não muda', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos/{{pedidoCancelar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos",
+                "{{pedidoCancelar}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 04 · AULA 04 · Paginação",
+      "description": "?page e ?size, envelope Pagina<T> e teto de 100 itens no servidor.",
+      "item": [
+        {
+          "name": "Página de 10 itens",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('F04 · devolve o envelope com 10 itens', () => {",
+                  "  pm.expect(body.items).to.be.an('array');",
+                  "  pm.expect(body.items.length).to.eql(10);",
+                  "});",
+                  "pm.test('F04 · a página 2 começa no 11º produto', () => pm.expect(body.items && body.items[0].id).to.eql(11));",
+                  "pm.test('F04 · informa page, size e total', () => {",
+                  "  pm.expect(body.page).to.eql(2);",
+                  "  pm.expect(body.size).to.eql(10);",
+                  "  pm.expect(body.total).to.be.at.least(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos?page=2&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "2"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Tentativa de baixar tudo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F04 · o servidor impõe teto de 100 itens', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.items).to.be.an('array');",
+                  "  pm.expect(body.items.length).to.be.at.most(100);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos?page=1&size=100000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "100000"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 05 · AULA 05 · Atomicidade (ACID)",
+      "description": "O pedido é tudo ou nada: se um item falha, nenhum estoque muda.",
+      "item": [
+        {
+          "name": "Estoque do produto 2 (antes)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('estoqueP2', pm.response.json().estoque);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos/2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos",
+                "2"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Pedido com um item válido e outro inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · item inexistente responde 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": [\n    {\n      \"produtoId\": 2,\n      \"quantidade\": 1\n    },\n    {\n      \"produtoId\": 99999,\n      \"quantidade\": 1\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Estoque do produto 2 (depois)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F05 · o estoque do item válido não mudou', () => {",
+                  "  pm.expect(pm.response.json().estoque).to.eql(pm.collectionVariables.get('estoqueP2'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos/2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos",
+                "2"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 06 · AULA 06 · Comunicação assíncrona",
+      "description": "O pedido responde na hora; o e-mail chega depois, pela fila.",
+      "item": [
+        {
+          "name": "João cria um pedido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · pedido criado com 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('pedidoNotificado', pm.response.json().id);",
+                  "pm.test('F06 · responde em menos de 1,5 s, sem esperar o e-mail', () => {",
+                  "  pm.expect(pm.response.responseTime).to.be.below(1500);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": [\n    {\n      \"produtoId\": 2,\n      \"quantidade\": 1\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "O e-mail chegou depois (espera 5 s)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 5000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F06 · o consumidor enviou a confirmação do pedido', () => {",
+                  "  pm.expect(pm.response.json()).to.include(pm.collectionVariables.get('pedidoNotificado'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAna}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notificacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notificacoes"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 07 · AULA 07 · Injeção de SQL",
+      "description": "O texto digitado é dado, nunca comando.",
+      "item": [
+        {
+          "name": "Busca normal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · a busca normal encontra o teclado', () => {",
+                  "  pm.expect(pm.response.json().length).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos/busca?nome=Teclado",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos",
+                "busca"
+              ],
+              "query": [
+                {
+                  "key": "nome",
+                  "value": "Teclado"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Busca com injeção",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F07 · a injeção não devolve nenhum produto', () => {",
+                  "  pm.expect(pm.response.json().length).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos/busca?nome=%25%27%20OR%20%271%27%3D%271",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos",
+                "busca"
+              ],
+              "query": [
+                {
+                  "key": "nome",
+                  "value": "%25%27%20OR%20%271%27%3D%271"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 08 · AULA 08 · Token expirado",
+      "description": "Token vencido é 401.",
+      "item": [
+        {
+          "name": "Pega um token já vencido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · tokenExpirado obtido', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('tokenExpirado', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login-expirado",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login-expirado"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"joao@loja.com\",\n  \"senha\": \"joao123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Usa o token vencido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F08 · token vencido responde 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenExpirado}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Controle: token válido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · token válido responde 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 09 · AULA 09 · RBAC e ABAC",
+      "description": "Parte A: só Admin remove produto. Parte B: pedido só para o dono ou Admin.",
+      "item": [
+        {
+          "name": "Ana cria um produto para o teste",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('produtoDescartavel', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAna}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Produto descartável\",\n  \"preco\": 10,\n  \"estoque\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Parte A: João (Cliente) tenta remover",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F09 · RBAC: Cliente recebe 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos/{{produtoDescartavel}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos",
+                "{{produtoDescartavel}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Parte A: Ana (Admin) remove",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F09 · RBAC: Admin remove com 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAna}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos/{{produtoDescartavel}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "produtos",
+                "{{produtoDescartavel}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Parte B: João abre o pedido da Maria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F09 · ABAC: pedido alheio responde 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos/103",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos",
+                "103"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Parte B: João abre o próprio pedido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · o dono abre o próprio pedido', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos/101",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos",
+                "101"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Parte B: Ana (Admin) abre o pedido da Maria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · Admin abre qualquer pedido', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAna}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos/103",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos",
+                "103"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Parte B: João tenta cancelar o pedido da Maria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F09 · ABAC: não cancela pedido alheio (exige a Falha 03 corrigida)', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos/103",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos",
+                "103"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 10 · AULA 10 · Contrato OpenAPI",
+      "description": "O contrato diz o que a API faz, inclusive a segurança.",
+      "item": [
+        {
+          "name": "Lê o contrato",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const spec = pm.response.json();",
+                  "const respostas = spec.paths['/api/v1/pedidos'].post.responses;",
+                  "pm.test('F10 · o POST de pedidos documenta 201, e não 200', () => {",
+                  "  pm.expect(respostas).to.have.property('201');",
+                  "  pm.expect(respostas).to.not.have.property('200');",
+                  "});",
+                  "pm.test('F10 · o POST de pedidos documenta os erros 400, 401, 404 e 409', () => {",
+                  "  pm.expect(respostas).to.include.all.keys('400', '401', '404', '409');",
+                  "});",
+                  "pm.test('F10 · o contrato declara o esquema Bearer (JWT)', () => {",
+                  "  const esquemas = Object.values((spec.components || {}).securitySchemes || {});",
+                  "  pm.expect(esquemas.some(e => (e.scheme || '').toLowerCase() === 'bearer' ||",
+                  "    (e.type === 'apiKey' && e.name === 'Authorization'))).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/swagger/v1/swagger.json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "swagger",
+                "v1",
+                "swagger.json"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FALHA 11 · AULA 11 · Regra na borda",
+      "description": "Frete grátis A PARTIR DE R$ 300,00. Corrija também os testes: rode dotnet test.",
+      "item": [
+        {
+          "name": "Compra de R$ 80,00",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OK · abaixo da borda paga frete', () => {",
+                  "  pm.expect(pm.response.json().frete).to.eql(25);",
+                  "  pm.expect(pm.response.json().total).to.eql(105);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": [\n    {\n      \"produtoId\": 2,\n      \"quantidade\": 1\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Compra de exatamente R$ 300,00",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('F11 · na borda de R$ 300,00 o frete é grátis', () => {",
+                  "  pm.expect(pm.response.json().frete).to.eql(0);",
+                  "  pm.expect(pm.response.json().total).to.eql(300);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJoao}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pedidos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "pedidos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": [\n    {\n      \"produtoId\": 3,\n      \"quantidade\": 1\n    }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5311"
+    },
+    {
+      "key": "tokenAna",
+      "value": ""
+    },
+    {
+      "key": "tokenJoao",
+      "value": ""
+    },
+    {
+      "key": "tokenExpirado",
+      "value": ""
+    },
+    {
+      "key": "estoqueP1",
+      "value": ""
+    },
+    {
+      "key": "estoqueP2",
+      "value": ""
+    },
+    {
+      "key": "pedidoCancelar",
+      "value": ""
+    },
+    {
+      "key": "pedidoNotificado",
+      "value": ""
+    },
+    {
+      "key": "produtoDescartavel",
+      "value": ""
+    }
+  ]
+}

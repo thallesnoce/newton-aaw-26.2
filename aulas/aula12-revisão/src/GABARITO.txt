@@ -1,0 +1,454 @@
+====================================================================
+ GABARITO — LojaRevisao / Operação Pente-Fino (Aula 11.1)
+ USO DO PROFESSOR. Não distribuir antes da fase de correção.
+====================================================================
+
+O número da falha é o número da aula. Cada correção abaixo foi aplicada e testada
+na ordem 01 → 11: depois de cada uma, só a pasta daquela falha muda de vermelha para verde.
+Reinicie a API depois de cada correção; o banco volta aos dados iniciais.
+
+--------------------------------------------------------------------
+FALHA 01 — Fronteira entre módulos violada
+Aula 01 — Do Monólito aos Microsserviços
+Arquivo: Modulos/Pedidos/PedidoService.cs, método CriarAsync
+--------------------------------------------------------------------
+Por que acontece:
+O módulo de Pedidos lê e altera diretamente a tabela de Produtos, que pertence ao
+Catálogo. Com isso, pula a regra de estoque que mora em Catalogo.Reservar. É o acoplamento
+que transforma um monólito em "grande bola de lama": e, no dia em que o Catálogo for extraído
+para o ServicoProdutos, com banco próprio (database per service), _db.Produtos nem existirá.
+
+Demonstração: POST /api/v1/pedidos com 999.999 unidades do produto 1: responde 201 e o estoque fica negativo.
+
+CORREÇÃO:
+
+  Em Modulos/Pedidos/PedidoService.cs, troque:
+
+    var produto = _db.Produtos.Find(item.ProdutoId)
+        ?? throw RegraDeNegocioException.NaoEncontrado($"O produto {item.ProdutoId} não existe.");
+    produto.Estoque -= item.Quantidade;
+
+  por:
+
+    var produto = _catalogo.Reservar(item.ProdutoId, item.Quantidade);
+
+Ponto a martelar:
+Monólito não é sinônimo de bagunça: um monólito modular respeita fronteiras. O contrato
+ICatalogo é o que permite trocar a implementação local por uma chamada HTTP mais tarde.
+
+
+--------------------------------------------------------------------
+FALHA 02 — Status code mentiroso
+Aula 02 — REST: Fundamentos
+Arquivo: Controllers/ProdutosController.cs, métodos Obter e Criar
+--------------------------------------------------------------------
+Por que acontece:
+O status code é a primeira coisa que o cliente lê. Um 200 com "erro" no corpo obriga
+quem consome a API a interpretar texto. E uma criação sem 201 e sem Location não diz
+que o recurso nasceu nem onde encontrá-lo.
+
+Demonstração: GET /api/v1/produtos/99999 responde 200; POST /api/v1/produtos responde 200 sem Location.
+
+CORREÇÃO:
+
+  Em Controllers/ProdutosController.cs, troque:
+
+    if (produto is null) return Ok(new { erro = "Produto não encontrado" });
+
+  por:
+
+    if (produto is null) return NotFound();
+
+  Em Controllers/ProdutosController.cs, troque:
+
+    _db.SaveChanges();
+    return Ok(produto);
+
+  por:
+
+    _db.SaveChanges();
+    return CreatedAtAction(nameof(Obter), new { id = produto.Id }, produto);
+
+Ponto a martelar:
+4xx = erro do cliente; 2xx = deu certo. 201 + Location é a resposta canônica de uma criação.
+
+
+--------------------------------------------------------------------
+FALHA 03 — Verbo na URI e GET com efeito colateral
+Aula 03 — REST: Design de APIs
+Arquivo: Controllers/PedidosController.cs, método Cancelar
+--------------------------------------------------------------------
+Por que acontece:
+A ação está na URI (cancelarPedido) em vez de estar no método HTTP. Pior: GET deve ser
+seguro, e este altera dados. Um crawler, um pré-carregamento do navegador ou um link
+compartilhado cancelam pedidos.
+
+Demonstração: Abrir GET /api/v1/cancelarPedido?id=N cancela o pedido.
+
+CORREÇÃO:
+
+  Em Controllers/PedidosController.cs, troque:
+
+    [HttpGet("/api/v1/cancelarPedido")]
+    public IActionResult Cancelar([FromQuery] int id)
+
+  por:
+
+    [HttpDelete("{id:int}")]
+    public IActionResult Cancelar(int id)
+
+  Em Controllers/PedidosController.cs, troque:
+
+    return Ok(new { mensagem = "Pedido cancelado" });
+
+  por:
+
+    return NoContent();
+
+Ponto a martelar:
+URI = substantivo; método = verbo. Repetir o DELETE responde 404 e o estado continua o mesmo:
+idempotência é sobre o ESTADO, não sobre a resposta.
+
+
+--------------------------------------------------------------------
+FALHA 04 — Coleção sem paginação
+Aula 04 — REST: Revisão
+Arquivo: Controllers/ProdutosController.cs, método Listar
+--------------------------------------------------------------------
+Por que acontece:
+A coleção cresce sem limite e cada chamada transfere tudo. O teto de tamanho precisa estar
+no SERVIDOR: um cliente pode pedir size=100000. Ordenar é obrigatório: sem OrderBy, a mesma
+página pode trazer itens diferentes a cada chamada.
+
+Demonstração: GET /api/v1/produtos devolve os 2.000 produtos; ?size=10 é ignorado.
+
+CORREÇÃO:
+
+  Em Controllers/ProdutosController.cs, troque:
+
+    public IActionResult Listar()
+    {
+        return Ok(_db.Produtos.ToList());
+    }
+
+  por:
+
+    public IActionResult Listar([FromQuery] int page = 1, [FromQuery] int size = 20)
+    {
+        page = Math.Max(page, 1);
+        size = Math.Clamp(size, 1, 100);
+
+        var total = _db.Produtos.Count();
+        var itens = _db.Produtos
+            .OrderBy(p => p.Id)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .ToList();
+
+        return Ok(new Pagina<Produto>(page, size, total, itens));
+    }
+
+Ponto a martelar:
+Paginação não é enfeite: protege o banco, a rede e o cliente. Quem manda no tamanho é o servidor.
+
+
+--------------------------------------------------------------------
+FALHA 05 — Operação sem atomicidade
+Aula 05 — Persistência Distribuída
+Arquivo: Modulos/Pedidos/PedidoService.cs, método CriarAsync
+--------------------------------------------------------------------
+Por que acontece:
+O SaveChanges dentro do laço grava cada item na hora. Se o segundo item falha, o primeiro já
+foi gravado e não há pedido: a mercadoria some do estoque. O relacional oferece transação ACID,
+mas só quando as alterações vão JUNTAS. O SaveChanges do final, sozinho, grava tudo numa única
+transação: se uma exceção interrompe antes dele, nada foi para o banco.
+
+Demonstração: POST com os itens [produto 2, produto 99999]: responde 404, mas o estoque do produto 2 baixa 1.
+
+CORREÇÃO:
+
+  Em Modulos/Pedidos/PedidoService.cs, troque:
+
+    _db.SaveChanges();
+
+    pedido.Itens.Add(new ItemPedido
+
+  por (ou seja, apague o _db.SaveChanges() de dentro do laço):
+
+    pedido.Itens.Add(new ItemPedido
+
+Ponto a martelar:
+Remover uma linha resolve aqui. Em microsserviços, com Pedidos e Produtos em bancos separados,
+essa transação única deixa de existir: esse é o custo do database per service, e o motivo de
+falarmos em consistência eventual.
+
+
+--------------------------------------------------------------------
+FALHA 06 — Acoplamento temporal
+Aula 06 — Comunicação entre Serviços
+Arquivo: Modulos/Pedidos/PedidoService.cs, método CriarAsync
+--------------------------------------------------------------------
+Por que acontece:
+O cliente espera o provedor de e-mail responder para saber se o pedido foi criado. As latências
+se somam e a lentidão de um serviço secundário vira a lentidão da compra. O e-mail tolera atraso:
+é o caso clássico de fila.
+
+Demonstração: Qualquer POST /api/v1/pedidos válido leva mais de 3 segundos.
+
+CORREÇÃO:
+
+  Em Modulos/Pedidos/PedidoService.cs, troque:
+
+    await _email.EnviarConfirmacaoAsync(pedido.Id);
+
+  por:
+
+    await _fila.PublicarAsync(new PedidoCriado(pedido.Id));
+
+Ponto a martelar:
+O campo _email deixa de ser usado no serviço e pode ser removido. Pergunta para a turma: a fila
+é em memória; o que acontece com os eventos se a API cair? (Por isso existem os brokers.)
+
+
+--------------------------------------------------------------------
+FALHA 07 — Injeção de SQL
+Aula 07 — Segurança Web (OWASP Top 10:2025)
+Arquivo: Controllers/ProdutosController.cs, método Buscar
+--------------------------------------------------------------------
+Por que acontece:
+O texto digitado é concatenado na instrução. O banco não distingue dado de comando, então o que
+veio na query string passa a fazer parte do SQL.
+
+Demonstração: GET /api/v1/produtos/busca?nome=%' OR '1'='1 ignora o filtro.
+
+CORREÇÃO:
+
+  Em Controllers/ProdutosController.cs, troque:
+
+    var sql = "SELECT * FROM Produtos WHERE Nome LIKE '%" + nome + "%'";
+    return Ok(_db.Produtos.FromSqlRaw(sql).Take(50).ToList());
+
+  por:
+
+    var resultado = _db.Produtos
+        .FromSqlRaw("SELECT * FROM Produtos WHERE Nome LIKE {0}", $"%{nome}%")
+        .Take(50)
+        .ToList();
+    return Ok(resultado);
+
+Outra correção válida, a mais simples, nem escreve SQL:
+
+        return Ok(_db.Produtos.Where(p => p.Nome.Contains(nome)).Take(50).ToList());
+
+Ponto a martelar:
+A diferença não é "escapar caracteres", é SEPARAR comando de dado. O parâmetro nunca vira instrução.
+
+
+--------------------------------------------------------------------
+FALHA 08 — Token expirado aceito
+Aula 08 — AuthN e AuthZ (JWT)
+Arquivo: Program.cs, TokenValidationParameters
+--------------------------------------------------------------------
+Por que acontece:
+A expiração (claim exp) só protege se o servidor a verificar. Sem isso, um token roubado vale para
+sempre: o JWT é autossuficiente e não há sessão no servidor para encerrar.
+
+Demonstração: Pegar um token em POST /api/v1/auth/login-expirado e chamar GET /api/v1/pedidos: responde 200.
+
+CORREÇÃO:
+
+  Em Program.cs, troque:
+
+    ValidateLifetime = false,
+
+  por:
+
+    ValidateLifetime = true,
+
+Ponto a martelar:
+401 = não sei quem é você (token ausente, inválido ou vencido). 403 = sei quem é, mas você não pode.
+
+
+--------------------------------------------------------------------
+FALHA 09 — Autorização que não decide
+Aula 09 — RBAC, ABAC e PBAC
+Arquivo: Controllers/ProdutosController.cs (Remover) e Controllers/PedidosController.cs (Obter e Cancelar)
+--------------------------------------------------------------------
+Por que acontece:
+Parte A: [Authorize] sozinho só exige estar logado (autenticação); falta dizer QUAL papel pode.
+Parte B: "ver pedido" não se resolve com papel, porque João e Maria têm o mesmo. A decisão
+depende de um atributo do recurso (o dono): é o limite do RBAC e o IDOR da Aula 07.
+
+Demonstração: João (Cliente) remove produto (204) e abre o pedido 103, da Maria (200).
+
+CORREÇÃO:
+
+  Em Controllers/ProdutosController.cs, troque:
+
+    [Authorize]
+    [HttpDelete("{id:int}")]
+
+  por:
+
+    [Authorize(Roles = "Admin")]
+    [HttpDelete("{id:int}")]
+
+  Em Controllers/PedidosController.cs, troque:
+
+    private int UsuarioLogadoId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+  por:
+
+    private int UsuarioLogadoId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    private bool PodeAcessar(Pedido pedido) =>
+        User.IsInRole("Admin") || pedido.UsuarioId == UsuarioLogadoId;
+
+  Em Controllers/PedidosController.cs, troque:
+
+    if (pedido is null) return NotFound();
+    return Ok(pedido);
+
+  por:
+
+    if (pedido is null) return NotFound();
+    if (!PodeAcessar(pedido)) return Forbid();
+    return Ok(pedido);
+
+  Em Controllers/PedidosController.cs, troque:
+
+    if (pedido is null) return NotFound();
+
+    _service.Cancelar(pedido);
+
+  por:
+
+    if (pedido is null) return NotFound();
+    if (!PodeAcessar(pedido)) return Forbid();
+
+    _service.Cancelar(pedido);
+
+Ponto a martelar:
+Papel responde "que tipo de usuário é você"; atributo responde "este recurso é seu?". O teste do
+cancelamento de pedido alheio só fica verde com as Falhas 03 e 09 corrigidas.
+
+
+--------------------------------------------------------------------
+FALHA 10 — Contrato que mente
+Aula 10 — Documentação com OpenAPI
+Arquivo: Controllers/PedidosController.cs (Criar) e Program.cs (AddSwaggerGen)
+--------------------------------------------------------------------
+Por que acontece:
+O contrato é o que o consumidor lê no lugar do código. Aqui ele anuncia 200 onde a API devolve
+201, omite os erros e não diz que há JWT: sem o esquema de segurança, o Swagger UI não tem o
+botão Authorize e as rotas protegidas não podem ser testadas por ele.
+
+Demonstração: Abrir /swagger: o POST de pedidos mostra só 200 e não há botão Authorize.
+
+CORREÇÃO:
+
+  Em Controllers/PedidosController.cs, troque:
+
+    [ProducesResponseType(typeof(Pedido), StatusCodes.Status200OK)]
+
+  por:
+
+    [ProducesResponseType(typeof(Pedido), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+
+  Em Program.cs, troque:
+
+    using Microsoft.IdentityModel.Tokens;
+
+  por:
+
+    using Microsoft.IdentityModel.Tokens;
+    using Microsoft.OpenApi.Models;
+
+  Em Program.cs, troque:
+
+    builder.Services.AddSwaggerGen();
+
+  por:
+
+    builder.Services.AddSwaggerGen(options =>
+    {
+        options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "Cole o token obtido em POST /api/v1/auth/login"
+        });
+        options.AddSecurityRequirement(new OpenApiSecurityRequirement
+        {
+            {
+                new OpenApiSecurityScheme
+                {
+                    Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+                },
+                Array.Empty<string>()
+            }
+        });
+    });
+
+Ponto a martelar:
+Para fechar, faça o fluxo no próprio Swagger: login, Authorize, POST de pedido. Os demais endpoints
+também merecem [ProducesResponseType]; aqui a revisão cobra um deles.
+
+
+--------------------------------------------------------------------
+FALHA 11 — Suíte verde que não protege
+Aula 11 — Testes e Qualidade
+Arquivo: LojaRevisao.Tests/CalculadoraDePedidoTests.cs e Modulos/Pedidos/CalculadoraDePedido.cs
+--------------------------------------------------------------------
+Por que acontece:
+A regra diz "A PARTIR DE R$ 300,00", mas o código usa > em vez de >=. A suíte não pega porque o
+esperado da borda foi copiado do comportamento do código (R$ 25,00) em vez de vir da regra. E o
+teste do total não tem asserção: passa sempre, mesmo se o método devolver qualquer valor.
+
+Demonstração: Comprar o produto 3 (R$ 300,00) cobra R$ 25,00 de frete, e dotnet test passa inteiro.
+
+CORREÇÃO:
+
+  Em LojaRevisao.Tests/CalculadoraDePedidoTests.cs, troque:
+
+    [InlineData(300.00, 25.00)]
+
+  por:
+
+    [InlineData(300.00, 0.00)]
+
+  Em LojaRevisao.Tests/CalculadoraDePedidoTests.cs, troque:
+
+    var total = CalculadoraDePedido.CalcularTotal(100m);
+
+  por:
+
+    var total = CalculadoraDePedido.CalcularTotal(100m);
+
+    Assert.Equal(125m, total);
+
+  Em Modulos/Pedidos/CalculadoraDePedido.cs, troque:
+
+    subtotal > 300m ? 0m : FretePadrao;
+
+  por:
+
+    subtotal >= 300m ? 0m : FretePadrao;
+
+Ponto a martelar:
+A ordem importa: 1) corrigir os testes; 2) ver um teste VERMELHO (o caso 300,00); 3) corrigir o código;
+4) ver verde. Esperado de teste vem da regra, nunca do código. Cobertura mede execução, não verificação:
+o teste sem Assert conta como coberto.
+
+
+--------------------------------------------------------------------
+ESTADO FINAL ESPERADO
+--------------------------------------------------------------------
+- Postman: todos os testes de todas as pastas verdes (Run collection).
+- dotnet test: 5 aprovados, com a API parada.
+- Swagger UI: botão Authorize funcionando; o POST de pedidos mostra 201, 400, 401, 404 e 409.
